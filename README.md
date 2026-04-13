@@ -1,5 +1,8 @@
 # pii-proxy
 
+[![Test](https://github.com/mirkokiefer/pii-proxy/actions/workflows/test.yml/badge.svg)](https://github.com/mirkokiefer/pii-proxy/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 Privacy proxy for AI agents. Mask PII before sending to LLMs, unmask responses to write back to real systems.
 
 ## Why
@@ -96,6 +99,39 @@ await redis.set('pii-session:123', data);
 const proxy2 = new PrivacyProxy();
 proxy2.loadMap(await redis.get('pii-session:123'));
 proxy2.unmask(text); // works with the same mappings
+```
+
+## Example: Anthropic SDK integration
+
+Full round-trip — mask user data, send to Claude, unmask the response for your database ([examples/anthropic-agent.ts](examples/anthropic-agent.ts)):
+
+```typescript
+import Anthropic from '@anthropic-ai/sdk';
+import { PrivacyProxy } from '@daslab/pii-proxy';
+
+const proxy = new PrivacyProxy();
+const client = new Anthropic();
+
+const userEmail = {
+  from: 'mirko@kiefer.com',
+  body: 'Tracking number is AETH0000345323DY. Call me at +49 170 1234567.',
+};
+
+// Mask before sending to Claude
+const { masked } = proxy.maskObject(userEmail);
+// masked.from → "cornell62@hotmail.com"
+// masked.body → "Tracking number is FCRQ6925552830IZ. Call me at +381.714.0024 x10865."
+
+const response = await client.messages.create({
+  model: 'claude-sonnet-4-20250514',
+  max_tokens: 512,
+  messages: [{ role: 'user', content: `Extract data from: ${JSON.stringify(masked)}` }],
+});
+
+// Claude responds with fake values → unmask to get real values for DB
+const real = proxy.unmask(response.content[0].text);
+// "cornell62@hotmail.com" → "mirko@kiefer.com"
+// "FCRQ6925552830IZ" → "AETH0000345323DY"
 ```
 
 ## Roadmap
